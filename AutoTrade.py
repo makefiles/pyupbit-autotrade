@@ -1,4 +1,5 @@
 import pyupbit
+
 import requests
 import datetime
 import time
@@ -32,11 +33,11 @@ def get_start_time(ticker):
     start_time = df.index[0]
     return start_time
 
-def get_ma15(ticker):
-    """15일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=15)
-    ma15 = df['close'].rolling(15).mean().iloc[-1]
-    return ma15
+def get_ma(ticker, days):
+    """ n일 이동 평균선 조회 """
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=days)
+    ma = df['close'].rolling(days).mean().iloc[-1]
+    return ma
 
 def get_balance(ticker):
     """잔고 조회"""
@@ -76,7 +77,6 @@ schedule.every().hour.do(lambda: predict_price("KRW-BTC"))
 
 # 로그인
 upbit = pyupbit.Upbit(UPBIT_ACCESS, UPBIT_SECRET)
-print("autotrade start")
 # 시작 메세지 슬랙 전송
 post_message("autotrade start")
 
@@ -88,10 +88,12 @@ while True:
 
         if start_time < now < end_time - datetime.timedelta(seconds=10):
             target_price = get_target_price("KRW-BTC", 0.5)
-            ma15 = get_ma15("KRW-BTC")
+            ma3_price = get_ma("KRW-BTC", 3)
+            ma5_price = get_ma("KRW-BTC", 5)
             current_price = get_current_price("KRW-BTC")
             if target_price < current_price \
-                and ma15 < current_price \
+                and ma3_price < current_price \
+                and ma5_price < current_price \
                 and current_price < predicted_close_price:
                 krw = get_balance("KRW")
                 if krw > 5000:
