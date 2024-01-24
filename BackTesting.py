@@ -11,7 +11,7 @@ upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
 class BackTesting:
     def __init__(self, daily_data, start_cash):
         self.daily_data = daily_data # 일봉 데이터
-        self.fee = 0.003 # 수수료 ( calculate_fee.xlsx 참고 )
+        self.fee = 0.002 + 0.001 # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.buy_signal = False # 매수 신호
 
         self.start_cash = start_cash # 시작 자산

@@ -1,7 +1,11 @@
 import pyupbit
+import yaml
 from prophet import Prophet
 
-upbit = pyupbit.Upbit('dWmkkEWu7qwTC7iB2V06i3YxTpPIFx5YuBaBHUb3', 'oGsxfUlmyLw9lQpW9wxESloIpScIcNRdzmTa7iuD')
+with open('config.yaml', encoding='UTF-8') as f:
+    """설정 파일 읽기"""
+    _cfg = yaml.load(f, Loader=yaml.FullLoader)
+upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
 
 # 15일 분량 시봉 데이터 가져오기 #
 df = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=360)
