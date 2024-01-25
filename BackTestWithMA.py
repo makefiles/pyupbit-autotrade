@@ -8,7 +8,7 @@ with open('config.yaml', encoding='UTF-8') as f:
 upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
 
 class BackTestWithMA:
-    def __init__(self, ticker="KRW-BTC", days=160, start_cash=1000000):
+    def __init__(self, ticker="KRW-BTC", days=160, start_cash=1000000, K=0.5):
         self.daily_data = pyupbit.get_ohlcv(ticker, count=days).reset_index()  # 일봉 데이터
         self.fee = 0.002 + 0.001  # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.buy_signal = False  # 매수 신호
@@ -21,13 +21,14 @@ class BackTestWithMA:
         self.mdd = 0  # 최대 낙폭
         self.trade_count = 0  # 거래횟수
         self.win_count = 0  # 승리횟수
+        self.K = K #
 
     def execute(self):
-        # 목표 매수가
+        # 변동성 돌파 전략
         self.daily_data['range'] = (self.daily_data['high'] - self.daily_data['low']).shift(1)
         self.daily_data['target_price'] = self.daily_data['open'] + self.daily_data['range'] * 0.5
 
-        # 이동 평균선
+        # 이동 평균선 교차 전략
         self.daily_data['ma5'] = self.daily_data['close'].rolling(5).mean()
         self.daily_data['ma10'] = self.daily_data['close'].rolling(10).mean()
         self.daily_data = self.daily_data.dropna()
@@ -36,8 +37,7 @@ class BackTestWithMA:
 
         for idx, row in self.daily_data.iterrows():
             # 매수 신호 확인 (목표가에 달성한 경우 목표가에 매수해 다음날 시가에 매도한 것으로 판단)
-            self.buy_signal = np.where(row['low'] < row['target_price'] < row['high'] \
-                                       and row['ma5'] < row['target_price'] and row['ma10'] < row['target_price'], True, False)
+            self.buy_signal = np.where(row['low'] < row['target_price'] < row['high'] and row['ma10'] < row['ma5'], True, False)
 
             # 수익률 계산 (다음날 시가와 당일 종가의 시간차이가 거의 없으므로 종가로 계산)
             self.ror = row['close'] / row['target_price'] - self.fee if self.buy_signal else 1
@@ -65,6 +65,5 @@ class BackTestWithMA:
         print('최저 잔액 : %s' % self.lowest_cash)
         print('최대 낙폭 (MDD) : %s' % self.mdd)
         print('=' * 40)
-
 
 BackTestWithMA("KRW-BTC", 160, 1000000).execute()

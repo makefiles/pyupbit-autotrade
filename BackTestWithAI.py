@@ -1,7 +1,10 @@
+from prophet import Prophet
 import numpy as np
 import pyupbit
 import yaml
-from prophet import Prophet
+import logging
+logging.getLogger("prophet").setLevel(logging.WARNING)
+logging.getLogger("cmdstanpy").disabled=True
 
 ### 매개변수 ###
 TICKER = "KRW-BTC"
@@ -29,6 +32,12 @@ mdd = 0  # 최대 낙폭
 trade_count = 0  # 거래횟수
 win_count = 0  # 승리횟수
 
+# 프로그레스바
+def progress_bar(current, total, width=50):
+    percent = float(current) / float(total)
+    bar = "#" * int(percent * width)
+    empty = " " * (width - len(bar))
+    print("\rProgress: [{0}] {1}/{2} ({3:.0f}%)".format(bar + empty, current, total, percent * 100), end="")
 
 # 결과 출력
 def result():
@@ -37,7 +46,7 @@ def result():
     print('-' * 40)
     print('총 거래 횟수 : %s' % trade_count)
     print('승리 횟수 : %s' % win_count)
-    print('승률 : %s' % (win_count / trade_count * 100))
+    print('승률 : %s' % ((win_count / trade_count * 100) if trade_count > 0 else 0))
     print('누적 수익률 : %s' % accumulated_ror)
     print('현재 잔액 : %s' % current_cash)
     print('최고 잔액 : %s' % highest_cash)
@@ -53,7 +62,7 @@ def predict_price(date):
     df['ds'] = df['index']
     df['y'] = df['close']
     data = df[['ds', 'y']]
-    model = Prophet()
+    model = Prophet(daily_seasonality=True)
     model.fit(data)
     future = model.make_future_dataframe(periods=24, freq='H')
     forecast = model.predict(future)
@@ -61,16 +70,18 @@ def predict_price(date):
     if len(close_df) == 0:
         close_df = forecast[forecast['ds'] == data.iloc[-1]['ds'].replace(hour=9)]
     close_value = close_df['yhat'].values[0]
+    progress_bar(daily_data.index[daily_data['index']==date][0]+1, DAYS)    
     return close_value
 
 
-# 목표 매수가
+# 변동성 돌파 전략
 daily_data['range'] = daily_data['high'] - daily_data['low']
 daily_data['target'] = daily_data['open'] + daily_data['range'].shift(1) * 0.5
 
 # 직전 15일 데이터로 시계열 예측
 daily_data['predict'] = daily_data['index'].apply(predict_price)
 daily_data = daily_data.dropna()
+print('\r')
 
 for idx, row in daily_data.iterrows():
     # 매수 신호 확인 (목표가에 달성한 경우 목표가에 매수해 다음날 시가에 매도한 것으로 판단)
@@ -87,5 +98,5 @@ for idx, row in daily_data.iterrows():
     dd = (highest_cash - current_cash) / highest_cash * 100  # 최대 낙폭 계산
     mdd = max(mdd, dd)
 
-print(daily_data)
+# print(f"{daily_data}")
 result()
