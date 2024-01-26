@@ -7,7 +7,7 @@ with open('config.yaml', encoding='UTF-8') as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
 upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
 
-# 15일 분량 시봉 데이터 가져오기 #
+# 15일 분량 시봉 데이터 #
 df = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=360)
 df = df.reset_index()
 df['ds'] = df['index']
@@ -23,7 +23,7 @@ if len(closeDf) == 0:
 closeValue = closeDf['yhat'].values[0]
 
 print(closeValue)
-fig1 = model.plot(forecast)
-fig1.show()
-fig2 = model.plot_components(forecast)
-fig2.show()
+fig = model.plot(forecast)
+fig.show()
+# fig_com = model.plot_components(forecast)
+# fig_com.show()
