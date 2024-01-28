@@ -27,14 +27,14 @@ class BackTestVbProphet:
         self.test_days = config["TEST_DAYS"]
 
         # 학습 시간
-        self.study_time = config["STUDY_DAYS"] * 24
+        self.study_days = config["STUDY_DAYS"]
 
         # 일봉 데이터
-        self.daily_df = pyupbit.get_ohlcv(config["TICKER"], count=config["TEST_DAYS"]).reset_index(names='datetime')
+        self.daily_df = pyupbit.get_ohlcv(config["TICKER"], count=self.test_days).reset_index(names='datetime')
 
         # 시봉 데이터
         self.hourly_df = (pyupbit.get_ohlcv(config["TICKER"], interval="minute60",
-                                            count=self.test_days * 24 + self.study_time).reset_index(names='datetime'))
+                                            count=self.test_days * 24 + self.study_days * 24).reset_index(names='datetime'))
 
         # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.fee = config["SLIPPAGE"] + config["COMMISSION"]
@@ -46,7 +46,7 @@ class BackTestVbProphet:
         self.k = config["K"]
 
     def test(self):
-        """ 테스트 """
+        """ 변동성 돌파 전략 + 시계열 예측 전략 """
         df = self.daily_df
 
         # 변동성 돌파 전략 (Volatility Breakout)
@@ -54,9 +54,7 @@ class BackTestVbProphet:
         df['target_price'] = df['open'] + df['range'] * self.k
 
         # 15일 데이터 시계열 예측 전략 (Prophet)
-        # print(df.to_string())
         df['predict_price'] = df.apply(lambda row: self.predict_price(row.name, row['datetime']), axis=1)
-        # df['predict_price'] = df['target_price'] + 1
         print('\r')
 
         # 매수 신호 (목표 금액에 달성한 경우 목표 금액에 매수해 다음날 시가에 매도한 것으로 판단)
@@ -81,12 +79,8 @@ class BackTestVbProphet:
         # 승리 횟수 기록
         df['win'] = np.where(df['ror'] > 1, 1, 0)
 
+        # print(df.to_string())
         # 결과 출력
-        self.print(df)
-        self.show(df)
-
-    def print(self, df):
-        """ 결과 출력 """
         print('=' * 40)
         print('변동성 돌파 + 시계열 예측 = 테스트 결과')
         print('-' * 40)
@@ -99,6 +93,100 @@ class BackTestVbProphet:
         print('최저 잔액 : %s' % df['cash'].min())
         print('최대 낙폭 (MDD) : %s' % df['dd'].max())
         print('=' * 40)
+        
+        # 그래프 출력
+        self.show(df)
+    
+    def test2(self) :
+        """ 변동성 돌파 전략 + 익일 매매 + 시계열 예측 전략 """
+        # TODO: 매수/매도일 비교가 필요함
+        df = self.daily_df
+
+        # 변동성 돌파 전략 (Volatility Breakout)
+        df['range'] = (df['high'] - df['low']).shift(1)
+        df['target_price'] = df['open'] + df['range'] * self.k
+
+        # 15일 데이터 시계열 예측 전략 (Prophet)
+        df['predict_price'] = df.apply(lambda row: self.predict_price(row.name, row['datetime']), axis=1)
+        print('\r')
+        
+        df['buy'] = 0
+        df['sell'] = 0
+
+        # N/A 행 제거
+        df = df.dropna().reset_index(drop=True, names='datetime')
+        
+        before_target_price = 0
+        buy_signal = False # 매수 신호
+        current_cash = self.start_cash # 현재 자산
+        highest_cash = self.start_cash # 자산 최고점
+        lowest_cash = self.start_cash # 자산 최저점
+        ror = 1 # 수익률
+        hpr = 1 # 누적 수익률
+        mdd = 0 # 최대 낙폭
+        trade_count = 0 # 거래횟수
+        win_count = 0 # 승리횟수
+        
+        for idx, row in df.iterrows() :
+            # 매수 신호 확인
+            buy_signal = np.where((row['low'] < row['target_price']) \
+                             & (row['target_price'] < row['high']) \
+                             & (row['target_price'] < row['predict_price']), True, False)
+            
+            # 매수 표시
+            df.loc[idx, 'buy'] = 1 if buy_signal and before_target_price == 0 else 0
+
+            # 전일 매수 가격 기록
+            if buy_signal:
+                if before_target_price == 0:
+                    trade_count += 1 # 거래 횟수 계산
+                    before_target_price = row['target_price']
+                continue
+            
+            # 매도 표시
+            df.loc[idx, 'sell'] = 1 if before_target_price > 0 else 0
+
+            # 수익률 계산
+            ror = row['open'] / before_target_price - self.fee if before_target_price > 0 else 1                
+
+            # 승리 횟수 계산
+            win_count += 1 if ror > 1 else 0
+
+            # 누적 수익률 계산
+            hpr *= ror
+            
+            # 현재 자산 갱신
+            current_cash *= ror
+
+            # 자산 최고점 갱신
+            highest_cash = max(highest_cash, current_cash)
+
+            # 자산 최저점 갱신
+            lowest_cash = min(lowest_cash, current_cash)
+
+            # 최대 낙폭 계산
+            mdd = max(mdd, (highest_cash - current_cash) / highest_cash * 100)
+            
+            # 이전 구매 가격 초기화
+            before_target_price = 0
+
+        # print(df.to_string())
+        # 결과 출력
+        print('=' * 40)
+        print('변동성 돌파 + 익일 매매 + 시계열 예측 = 테스트 결과')
+        print('-' * 40)
+        print('총 거래 횟수 : %s' % trade_count)
+        print('승리 횟수 : %s' % win_count)
+        print('승률 : %s' % (win_count / trade_count * 100 if trade_count > 0 else 0))
+        print('누적 수익률 : %s' % hpr)
+        print('현재 잔액 : %s' % current_cash)
+        print('최고 잔액 : %s' % highest_cash)
+        print('최저 잔액 : %s' % lowest_cash)
+        print('최대 낙폭 (MDD) : %s' % mdd)
+        print('=' * 40)
+        
+        # 그래프 출력
+        self.show(df)
 
     def progress_bar(self, current, total, width=50):
         """ 프로그레스바 """
@@ -110,7 +198,7 @@ class BackTestVbProphet:
     def predict_price(self, index, date):
         """ Prophet 시계열 예측 가격 """
         df = self.hourly_df
-        df = df[df['datetime'] <= date].iloc[-self.study_time:]  # date 이전 15일 시봉
+        df = df[df['datetime'] <= date].iloc[-(self.study_days * 24):]  # date 이전 15일 시봉
         data_df = df[['datetime', 'close']].rename(columns={'datetime': 'ds', 'close': 'y'})
         model = Prophet()
         model.fit(data_df)
@@ -124,17 +212,19 @@ class BackTestVbProphet:
         return close_value
     
     def show(self, df):
-        """ 그래프 표시 """
+        """ 그래프 표시 """        
         # plot setting
         plt.figure(figsize = (20, 10))
         sns.set_style('whitegrid')
 
         # get data
+        if df['buy'].sum() == 0: return
         coin_y = df['open'].values
         buy_df = df[df['buy']==1]
         buy_x = buy_df.index.values
-        sell_x = buy_df.index + 1
-        buy_yhat = buy_df['predict_price'].values
+        sell_x = df[df['sell']==1].index.values
+        buy_x = buy_x[:(len(sell_x))]
+        buy_yhat = buy_df['predict_price'].values 
         if coin_y.shape[0] == sell_x[-1]:
             buy_x = buy_x[:-1]
             sell_x = sell_x[:-1]
@@ -183,4 +273,4 @@ BackTestVbProphet({
     "SLIPPAGE": 0.002,
     "COMMISSION": 0.001,
     "K": 0.3
-}).test()
+}).test2()
