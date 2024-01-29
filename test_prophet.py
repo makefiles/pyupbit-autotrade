@@ -1,14 +1,10 @@
-import pyupbit
-import yaml
 from prophet import Prophet
+import TradeApi
 
-with open('config.yaml', encoding='UTF-8') as f:
-    """설정 파일 읽기"""
-    _cfg = yaml.load(f, Loader=yaml.FullLoader)
-upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
+trader = TradeApi.get_api("UPBIT", "BTC").get_public()
 
 # 15일 분량 시봉 데이터 #
-df = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=360)
+df = trader.get_ohlcv("KRW-BTC", interval="minute60", count=360)
 df = df.reset_index()
 df['ds'] = df['index']
 df['y'] = df['close']

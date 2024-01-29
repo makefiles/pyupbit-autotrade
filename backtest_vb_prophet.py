@@ -1,25 +1,19 @@
 from prophet import Prophet
 import numpy as np
-import pyupbit
-import yaml
 import logging
 import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import matplotlib.patches as patches
+import TradeApi
 
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled = True
 
-# 설정 읽기
-with open('config.yaml', encoding='UTF-8') as f:
-    """설정 파일 읽기"""
-    _cfg = yaml.load(f, Loader=yaml.FullLoader)
-upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
-
-
 class BackTestVbProphet:
     def __init__(self, config):
+        # 인증된 객체 가져오기
+        self.trader = TradeApi.get_api("UPBIT", "BTC")
+        
         # 결과 데이터
         self.result_df = None
 
@@ -30,10 +24,10 @@ class BackTestVbProphet:
         self.study_days = config["STUDY_DAYS"]
 
         # 일봉 데이터
-        self.daily_df = pyupbit.get_ohlcv(config["TICKER"], count=self.test_days).reset_index(names='datetime')
+        self.daily_df = self.trader.get_public().get_ohlcv(config["TICKER"], count=self.test_days).reset_index(names='datetime')
 
         # 시봉 데이터
-        self.hourly_df = (pyupbit.get_ohlcv(config["TICKER"], interval="minute60",
+        self.hourly_df = (self.trader.get_public().get_ohlcv(config["TICKER"], interval="minute60",
                                             count=self.test_days * 24 + self.study_days * 24).reset_index(names='datetime'))
 
         # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
@@ -199,15 +193,7 @@ class BackTestVbProphet:
         """ Prophet 시계열 예측 가격 """
         df = self.hourly_df
         df = df[df['datetime'] <= date].iloc[-(self.study_days * 24):]  # date 이전 15일 시봉
-        data_df = df[['datetime', 'close']].rename(columns={'datetime': 'ds', 'close': 'y'})
-        model = Prophet()
-        model.fit(data_df)
-        future = model.make_future_dataframe(periods=24, freq='H')
-        forecast = model.predict(future)
-        close_df = forecast[forecast['ds'] == forecast.iloc[-1]['ds'].replace(hour=9)]
-        if len(close_df) == 0:
-            close_df = forecast[forecast['ds'] == data_df.iloc[-1]['ds'].replace(hour=9)]
-        close_value = close_df['yhat'].values[0]
+        close_value = self.trader.predict_price(df, self.study_days)
         self.progress_bar(index + 1, self.test_days)
         return close_value
     

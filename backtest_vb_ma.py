@@ -1,22 +1,16 @@
 import numpy as np
-import pyupbit
-import yaml
 import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import matplotlib.patches as patches
-
-# 설정 읽기
-with open('config.yaml', encoding='UTF-8') as f:
-    """설정 파일 읽기"""
-    _cfg = yaml.load(f, Loader=yaml.FullLoader)
-upbit = pyupbit.Upbit(_cfg['UPBIT_ACCESS'], _cfg['UPBIT_SECRET'])
-
+import TradeApi
 
 class BackTestVbMa:
     def __init__(self, config):
+        # 인증된 객체 가져오기
+        trader = TradeApi.get_api("UPBIT", "BTC")
+        
         # 일봉 데이터
-        self.df = pyupbit.get_ohlcv(config["TICKER"], count=config["DAYS"]).reset_index(names='datetime')
+        self.df = trader.get_public().get_ohlcv(config["TICKER"], count=config["DAYS"]).reset_index(names='datetime')
 
         # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.fee = config["SLIPPAGE"] + config["COMMISSION"]
