@@ -17,33 +17,16 @@ K = 0.3
 MIN_KRW = 5000
 MIN_BTC = 0.0005
 
-trader = TradeApi.get_api("UPBIT", "KRW-BTC")
+trader = TradeApi.get_api("UPBIT", "BTC", "KRW")
+trader.start_predicting_price()
+def start_predicting_price(self):
+    """ 예측 스케쥴 시작 """
+    self.get_predicted_price(None, 20)
+    schedule.every().hour.do(lambda: self.get_predicted_price(None, 20))
 
 # 시작 메세지 슬랙 전송
 trader.message("AutoTrade start")
 
-predicted_close_price = 0
-def predict_price(ticker, days):
-    """Prophet으로 당일 종가 가격 예측"""
-    global predicted_close_price
-    df = trader.get_public().get_ohlcv(ticker, interval = "minute60", count = days * 24)
-    df = df.reset_index(names='datetime')
-    df['ds'] = df['datetime']
-    df['y'] = df['close']
-    data = df[['ds','y']]
-    model = Prophet()
-    model.fit(data)
-    future = model.make_future_dataframe(periods=24, freq='H')
-    forecast = model.predict(future)
-    close_df = forecast[forecast['ds'] == forecast.iloc[-1]['ds'].replace(hour=9)]
-    if len(close_df) == 0:
-        close_df = forecast[forecast['ds'] == data.iloc[-1]['ds'].replace(hour=9)]
-    close_value = close_df['yhat'].values[0]
-    predicted_close_price = close_value
-
-# 시계열 예측
-predict_price(KRW_TICKER, STUDY_DAYS)
-schedule.every().hour.do(lambda: predict_price(KRW_TICKER, STUDY_DAYS))
 while True:
     try:
         schedule.run_pending()

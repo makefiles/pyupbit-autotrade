@@ -4,49 +4,54 @@ import requests
 import datetime
 import schedule
 from prophet import Prophet
+import logging
+logging.getLogger("prophet").setLevel(logging.WARNING)
+logging.getLogger("cmdstanpy").disabled = True
 
-def get_api(trader, ticker):
+def get_api(trader, coin, currency):
     
     if trader.lower() == "upbit":
-        api = UpbitTrader(ticker)
+        api = UpbitTrader(coin, currency)
     
     return api
 
+# TODO: Python 공부를 위해 클래스를 만들었으나 좀 복잡해 짐
 class TradeApi:
-    def __init__(self, trader, ticker):
+    def __init__(self, trader, coin, currency):
         self.trader = trader
-        self.ticker = ticker
+        self.coin = coin
+        self.currency = currency
         self.predicted_close_price = 0
         with open('config.yaml', encoding='UTF-8') as f:
             _cfg = yaml.load(f, Loader=yaml.FullLoader)
         self.discord_webhook_url = _cfg['DISCORD_WEBHOOK_URL']
 
-    def get_public(self):
-        None
-    
-    def get_private(self):
-        None
+    def get_ohlcv_days(self, count):
+        pass
+
+    def get_ohlcv_hours(self, count):
+        pass
 
     def get_target_price(self, k):
-        None
+        pass
     
     def get_start_time(self):
-        None
+        pass
     
     def get_ma(self, days):
-        None
+        pass
     
     def get_balance(self, ticker):
-        None
+        pass
     
     def get_current_price(self):
-        None
+        pass
     
-    def buy_ticker(self, krw):
-        None
+    def buy_coin(self, krw):
+        pass
     
-    def sell_ticker(self, btc):
-        None
+    def sell_coin(self, btc):
+        pass
     
     def message(self, msg):
         """디스코드 메세지 전송"""
@@ -55,14 +60,16 @@ class TradeApi:
         requests.post(self.discord_webhook_url, data=message)
         print(message)
     
-    def predict_price(self, df = None, study_days = 20):
-        None
-    
-    def get_predict_price(self):
+    def get_predicted_price(self):
+        """ 예측된 가격 가져오기 """
         return self.predicted_close_price
     
-    def set_predict_price(self, df):
-        """ Prophet으로 당일 종가 가격 예측 """
+    def get_predicted_price(self, df = None, study_days = 20):
+        """ 가격 예측 전처리 (상속 구현) """
+        pass
+    
+    def get_predicted_price(self, df):
+        """ Prophet 가격 예측 (상속 안함) """
         data_df = df[['datetime', 'close']].rename(columns={'datetime': 'ds', 'close': 'y'})
         model = Prophet()
         model.fit(data_df)
@@ -75,40 +82,40 @@ class TradeApi:
         return self.predicted_close_price
     
     def __str__(self):
-        return "Used %s API (%s)" % (self.trader, self.ticker)
+        return "Used %s API (%s, %s)" % (self.trader, self.coin, self.currency)
 
 class UpbitTrader(TradeApi):
-    def __init__(self, ticker):
+    def __init__(self, coin, currency):
         """ 초기화 & 거래 종목 선택 """
-        super().__init__("UPBIT", ticker)
+        super().__init__("UPBIT", coin, currency)
         with open('config.yaml', encoding='UTF-8') as f:
             _cfg = yaml.load(f, Loader=yaml.FullLoader)
         self.upbit = pyupbit.Upbit(_cfg['API_ACCESS'], _cfg['API_SECRET'])
+        self.ticker = self.currency + "-" + self.coin
+        self.pyupbit = pyupbit
         self.commission = 0.05
         self.min_krw = 5000
         self.min_btc = 0.0005
-        
-        # 시계열 예측
-        self.predict_price(study_days = 20)
-        #schedule.every().hour.do(lambda: self.predict_price(study_days = 20))
-        
-    def get_public(self):
-        """ 공개 API 객체 """
-        return pyupbit
+    
+    def get_ohlcv_days(self, count):
+        return pyupbit.get_ohlcv(self.ticker, interval="day", count=count)
+    
+    def get_ohlcv_hours(self, count):
+        return pyupbit.get_ohlcv(self.ticker, interval="minute60", count=count)
     
     def get_target_price(self, k):
         """ 변동성 돌파 전략으로 매수 목표가 조회 """
-        df = pyupbit.get_ohlcv(super().ticker, interval="day", count=2)
+        df = self.get_ohlcv_days(2)
         return df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * k
     
     def get_start_time(self):
         """ 시작 시간 조회 """
-        df = pyupbit.get_ohlcv(super().ticker, interval="day", count=1)
+        df = self.get_ohlcv_days(1)
         return df.index[0]
 
     def get_ma(self, days):
         """ n일 이동 평균선 조회 """
-        df = pyupbit.get_ohlcv(super().ticker, interval="day", count=days)
+        df = self.get_ohlcv_days(days)
         return df['close'].rolling(days).mean().iloc[-1]
 
     def get_balance(self, ticker):
@@ -124,26 +131,23 @@ class UpbitTrader(TradeApi):
 
     def get_current_price(self):
         """ 현재가 조회 """
-        return pyupbit.get_orderbook(ticker = super().ticker)["orderbook_units"][0]["ask_price"]
+        return pyupbit.get_orderbook(ticker = self.ticker)["orderbook_units"][0]["ask_price"]
 
-    def buy_ticker(self, krw):
+    def buy_coin(self, krw):
         """ 매수 """
         if krw > self.min_krw: # 거래 최소 금액
-            return self.upbit.buy_market_order(super().ticker, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+            return self.upbit.buy_market_order(self.ticker, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
         return None
 
-    def sell_ticker(self, btc):
+    def sell_coin(self, btc):
         """ 매도 """
         if btc > self.min_btc: # 거래 최소 코인
-            return self.upbit.sell_market_order(super().ticker, btc * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+            return self.upbit.sell_market_order(self.ticker, btc * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
         return None
     
-    def predict_price(self, df = None, study_days = 20):
+    def get_predict_price(self, df = None, study_days = 20):
         """ 시계열 예측 """
         if df is None:
-            df = pyupbit.get_ohlcv(self.ticker, interval = "minute60", count = study_days * 24)
-            print(df)
+            df = self.get_ohlcv_hours(study_days * 24)
             df = df.reset_index(names='datetime')
-        return super().set_predict_price(df)
-
-get_api("UPBIT", "BTC")
+        return super().get_predicted_price(df)

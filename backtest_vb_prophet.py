@@ -12,7 +12,7 @@ logging.getLogger("cmdstanpy").disabled = True
 class BackTestVbProphet:
     def __init__(self, config):
         # 인증된 객체 가져오기
-        self.trader = TradeApi.get_api("UPBIT", "BTC")
+        self.trader = TradeApi.get_api("UPBIT", config["COIN"], "KRW")
         
         # 결과 데이터
         self.result_df = None
@@ -24,11 +24,10 @@ class BackTestVbProphet:
         self.study_days = config["STUDY_DAYS"]
 
         # 일봉 데이터
-        self.daily_df = self.trader.get_public().get_ohlcv(config["TICKER"], count=self.test_days).reset_index(names='datetime')
+        self.daily_df = self.trader.get_ohlcv_days(self.test_days).reset_index(names='datetime')
 
         # 시봉 데이터
-        self.hourly_df = (self.trader.get_public().get_ohlcv(config["TICKER"], interval="minute60",
-                                            count=self.test_days * 24 + self.study_days * 24).reset_index(names='datetime'))
+        self.hourly_df = (self.trader.get_ohlcv_hours(self.test_days * 24 + self.study_days * 24).reset_index(names='datetime'))
 
         # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.fee = config["SLIPPAGE"] + config["COMMISSION"]
@@ -193,7 +192,7 @@ class BackTestVbProphet:
         """ Prophet 시계열 예측 가격 """
         df = self.hourly_df
         df = df[df['datetime'] <= date].iloc[-(self.study_days * 24):]  # date 이전 15일 시봉
-        close_value = self.trader.predict_price(df, self.study_days)
+        close_value = self.trader.get_predict_price(df, self.study_days)
         self.progress_bar(index + 1, self.test_days)
         return close_value
     
@@ -252,7 +251,7 @@ class BackTestVbProphet:
         plt.show()
 
 BackTestVbProphet({
-    "TICKER": "KRW-BTC",
+    "COIN": "BTC",
     "TEST_DAYS": 100,
     "STUDY_DAYS": 20,
     "CASH": 1000000,

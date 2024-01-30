@@ -7,10 +7,10 @@ import TradeApi
 class BackTestVbMa:
     def __init__(self, config):
         # 인증된 객체 가져오기
-        trader = TradeApi.get_api("UPBIT", "BTC")
+        trader = TradeApi.get_api("UPBIT", config["COIN"], "KRW")
         
         # 일봉 데이터
-        self.df = trader.get_public().get_ohlcv(config["TICKER"], count=config["DAYS"]).reset_index(names='datetime')
+        self.df = trader.get_ohlcv_days(config["DAYS"]).reset_index(names='datetime')
 
         # 슬리피지 + 업비트 매도/매수 수수료 (0.05% * 2)
         self.fee = config["SLIPPAGE"] + config["COMMISSION"]
@@ -210,7 +210,7 @@ class BackTestVbMa:
 
 
 BackTestVbMa({
-    "TICKER": "KRW-BTC",
+    "COIN": "BTC",
     "DAYS": 100,
     "CASH": 1000000,
     "SLIPPAGE": 0.002,

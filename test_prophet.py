@@ -1,10 +1,10 @@
 from prophet import Prophet
 import TradeApi
 
-trader = TradeApi.get_api("UPBIT", "BTC").get_public()
+trader = TradeApi.get_api("UPBIT", "BTC", "KRW")
 
 # 15일 분량 시봉 데이터 #
-df = trader.get_ohlcv("KRW-BTC", interval="minute60", count=360)
+df = trader.get_ohlcv_hours(15 * 24)
 df = df.reset_index()
 df['ds'] = df['index']
 df['y'] = df['close']
@@ -23,3 +23,7 @@ fig = model.plot(forecast)
 fig.show()
 # fig_com = model.plot_components(forecast)
 # fig_com.show()
+
+import pybithumb
+price_df = pybithumb.get_candlestick("BTC",  chart_intervals="24h")
+print(len(price_df))
