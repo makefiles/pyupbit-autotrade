@@ -1,8 +1,9 @@
 import pyupbit
+import pybithumb
 import yaml
 import requests
 import datetime
-import schedule
+import math
 from prophet import Prophet
 import logging
 logging.getLogger("prophet").setLevel(logging.WARNING)
@@ -32,7 +33,7 @@ class TradeApi:
     def get_ohlcv_hours(self, count):
         pass
 
-    def get_target_price(self, k):
+    def get_target_price(self):
         pass
     
     def get_start_time(self):
@@ -91,9 +92,12 @@ class UpbitTrader(TradeApi):
         with open('config.yaml', encoding='UTF-8') as f:
             _cfg = yaml.load(f, Loader=yaml.FullLoader)
         self.upbit = pyupbit.Upbit(_cfg['API_ACCESS'], _cfg['API_SECRET'])
-        self.ticker = self.currency + "-" + self.coin
         self.pyupbit = pyupbit
+        self.ticker = self.currency + "-" + self.coin
+        
+        # 필요 상수 선언
         self.commission = 0.05
+        self.k = 0.3
         self.min_krw = 5000
         self.min_btc = 0.0005
     
@@ -103,10 +107,10 @@ class UpbitTrader(TradeApi):
     def get_ohlcv_hours(self, count):
         return pyupbit.get_ohlcv(self.ticker, interval="minute60", count=count)
     
-    def get_target_price(self, k):
+    def get_target_price(self):
         """ 변동성 돌파 전략으로 매수 목표가 조회 """
         df = self.get_ohlcv_days(2)
-        return df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * k
+        return df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * self.k
     
     def get_start_time(self):
         """ 시작 시간 조회 """
@@ -135,14 +139,19 @@ class UpbitTrader(TradeApi):
 
     def buy_coin(self, krw):
         """ 매수 """
-        if krw > self.min_krw: # 거래 최소 금액
-            return self.upbit.buy_market_order(self.ticker, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+        krw = math.floor(krw)
+        if krw >= self.min_krw: # 거래 최소 금액
+            result = self.upbit.buy_market_order(self.ticker, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+            super().message(self.ticker + " Buy : " + str(result))
+            return result
         return None
 
     def sell_coin(self, btc):
         """ 매도 """
-        if btc > self.min_btc: # 거래 최소 코인
-            return self.upbit.sell_market_order(self.ticker, btc * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+        if btc >= self.min_btc: # 거래 최소 코인
+            result = self.upbit.sell_market_order(self.ticker, btc) # 커미션 알아서 빠져나감
+            super().message(self.ticker + " Sell : " + str(result))
+            return result
         return None
     
     def get_predict_price(self, df = None, study_days = 20):
@@ -151,3 +160,78 @@ class UpbitTrader(TradeApi):
             df = self.get_ohlcv_hours(study_days * 24)
             df = df.reset_index(names='datetime')
         return super().get_predicted_price(df)
+
+class BithumbTrader(TradeApi):
+    def __init__(self, coin, currency):
+        """ 초기화 & 거래 종목 선택 """
+        super().__init__("BITHUMB", coin, currency)
+        with open('config.yaml', encoding='UTF-8') as f:
+            _cfg = yaml.load(f, Loader=yaml.FullLoader)
+        self.bithumb = pybithumb.Bithumb(_cfg['API_ACCESS'], _cfg['API_SECRET'])
+        self.pybithumb = pybithumb
+        
+        # 필요 상수 선언
+        self.commission = 0.05
+        self.k = 0.3
+        self.min_krw = 5000
+        self.min_btc = 0.0005
+    
+    def get_ohlcv_days(self, count):
+        df = pybithumb.get_candlestick(self.coin, self.currency, "24h")
+        return df.tail(count)
+    
+    def get_ohlcv_hours(self, count):
+        df = pybithumb.get_candlestick(self.coin, self.currency, "1h")
+        return df.tail(count)
+    
+    def get_target_price(self):
+        """ 변동성 돌파 전략으로 매수 목표가 조회 """
+        df = self.get_ohlcv_days(2)
+        return df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * self.k
+    
+    def get_start_time(self):
+        """ 시작 시간 조회 """
+        df = self.get_ohlcv_days(1)
+        return df.index[0]
+
+    def get_ma(self, days):
+        """ n일 이동 평균선 조회 """
+        df = self.get_ohlcv_days(days)
+        return df['close'].rolling(days).mean().iloc[-1]
+
+    def get_balance(self, ticker):
+        """잔고 조회"""
+        balance = self.bithumb.get_balance(ticker)
+        if balance is not None:
+            return balance
+        else:
+            return 0
+
+    def get_current_price(self):
+        """ 현재가 조회 """
+        return pybithumb.get_orderbook(self.coin, self.currency)["asks"][0]["price"]
+
+    def buy_coin(self, krw):
+        """ 매수 """
+        krw = math.floor(krw)
+        if krw >= self.min_krw: # 거래 최소 금액
+            result = self.bithumb.buy_market_order(self.coin, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
+            super().message(self.ticker + " Buy : " + str(result))
+            return result
+        return None
+
+    def sell_coin(self, btc):
+        """ 매도 """
+        if btc >= self.min_btc: # 거래 최소 코인
+            result = self.upbit.sell_market_order(self.ticker, btc) # 커미션 알아서 빠져나감
+            super().message(self.ticker + " Sell : " + str(result))
+            return result
+        return None
+    
+    def get_predict_price(self, df = None, study_days = 20):
+        """ 시계열 예측 """
+        if df is None:
+            df = self.get_ohlcv_hours(study_days * 24)
+            df = df.reset_index(names='datetime')
+        return super().get_predicted_price(df)
+

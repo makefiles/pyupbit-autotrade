@@ -1,51 +1,43 @@
-import pyupbit
-import requests
 import datetime
 import time
-import yaml
 import schedule
 from prophet import Prophet
 import TradeApi
 
-# TODO: 변동성 돌파 + 익일 매매 + 시계열 예측 구현
+COIN = "BTC"
+CURRENCY = "KRW"
 
-TICKER = "BTC"
-KRW_TICKER = "KRW-" + TICKER
-COMMISSION = 0.05
-STUDY_DAYS = 20
-K = 0.3
-MIN_KRW = 5000
-MIN_BTC = 0.0005
+# API 객체 생성
+trader = TradeApi.get_api("UPBIT", COIN, CURRENCY)
 
-trader = TradeApi.get_api("UPBIT", "BTC", "KRW")
-trader.start_predicting_price()
-def start_predicting_price(self):
-    """ 예측 스케쥴 시작 """
-    self.get_predicted_price(None, 20)
-    schedule.every().hour.do(lambda: self.get_predicted_price(None, 20))
+# 가격 예측 스케쥴링
+trader.get_predicted_price(None, 20)
+schedule.every().hour.do(lambda: trader.get_predicted_price(None, 20))
 
 # 시작 메세지 슬랙 전송
 trader.message("AutoTrade start")
 
+'''
+TODO:
+    1. 매도시 수수료 계산 이상함 (완료) --> 매수에만 계산함
+    2. 변동성 돌파 + 익일 매매 + 시계열 예측 구현
+    3. 전액 매수 후 더이상 구매 처리가 필요 없으므로 루프 대기 기능
+    4. 1시간 단위로 현재 가격 정보 보여주기
+'''
 while True:
+    time.sleep(1)
     try:
         schedule.run_pending()
         now = datetime.datetime.now()
-        start_time = get_start_time(KRW_TICKER)
+        start_time = trader.get_start_time()
         end_time = start_time + datetime.timedelta(days=1)
         if start_time < now < end_time - datetime.timedelta(seconds=10):
-            target_price = get_target_price(KRW_TICKER, K)
-            current_price = get_current_price(KRW_TICKER)
+            target_price = trader.get_target_price()
+            current_price = trader.get_current_price()
+            predicted_close_price = trader.get_predicted_price()
             if target_price < current_price < predicted_close_price:
-                buy_result = buy_coin(KRW_TICKER, get_balance("KRW"))
-                if buy_result is not None:
-                    post_message(KRW_TICKER + " buy : " + str(buy_result))
+                trader.buy_coin(trader.get_balance(CURRENCY))
         else:
-            sell_result = sell_coin(KRW_TICKER, get_balance(TICKER))
-            if sell_result is not None:
-                post_message(KRW_TICKER + " sell : " + str(sell_result))
-        time.sleep(1)
+            trader.sell_coin(trader.get_balance(COIN))
     except Exception as e:
-        print(e)
-        post_message(e)
-        time.sleep(1)
+        trader.message(e)
