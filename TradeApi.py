@@ -3,6 +3,7 @@ import pybithumb
 import yaml
 import requests
 import datetime
+import time
 import math
 from prophet import Prophet
 import logging
@@ -211,22 +212,66 @@ class BithumbTrader(TradeApi):
         """ 현재가 조회 """
         return pybithumb.get_orderbook(self.coin, self.currency)["asks"][0]["price"]
 
+    # TODO: 너무 이상하다...
     def buy_coin(self, krw):
         """ 매수 """
-        krw = math.floor(krw)
-        if krw >= self.min_krw: # 거래 최소 금액
-            result = self.bithumb.buy_market_order(self.coin, krw * (1 - self.commission / 100)) # 커미션이 0.05 라면 0.9995 를 뺌
-            super().message(self.ticker + " Buy : " + str(result))
-            return result
-        return None
+        while True:
+            try:
+                krw = krw[2] - krw[3] # 현금 보유 금액
+                krw = krw * (1 - self.commission / 100)
+                krw = krw - (krw % 1000) # 천원단위
+                if krw < 500:
+                    super().message("보유 금액이 너무 작음 :%.2f" % krw)
+                    return
+                
+                while True:
+                    sell_price = self.get_current_price()
+                    if sell_price > krw:
+                        sell_price = krw
+                    unit = krw / float(sell_price) # 호가창 첫번째 가격으로 구매 가능 금액을 나눔
+                    unit = math.trunc(unit * 10000) / 10000 # 소수점 네자리 이상 버림
+                    if unit == 0:
+                        super().message("보유 금액이 너무 작음 :%.2f" % krw)
+                        return
+                    elif unit < 0.001:
+                        super().message("unit이 최소 단위보다 작음 :%.4f" % unit)
+                        return
+                    sell_price = int(sell_price)
+                    order = self.bithumb.buy_limit_order(self.coin, sell_price, unit, self.currency)
+                    if order is not None and type(order) is tuple:
+                        super().message("Buy : " + str(order))
+                        return
+                    elif order is not None:
+                        super().message("Buy one more : " + str(order))
+                        if order.get('status') == '5500':
+                            krw = krw - 10000 # 만원 빼서 재도전
+                            continue
+                        elif order.get('status') == '5600':
+                            return
+                    else:
+                        time.sleep(1)
+            except Exception as e:
+                super().message(e)
+                time.sleep(1)
 
     def sell_coin(self, btc):
         """ 매도 """
-        if btc >= self.min_btc: # 거래 최소 코인
-            result = self.upbit.sell_market_order(self.ticker, btc) # 커미션 알아서 빠져나감
-            super().message(self.ticker + " Sell : " + str(result))
-            return result
-        return None
+        while True:
+            try:
+                unit = btc[0]
+                if unit == 0:
+                    super().message("보유 코인(%s) 이 없음" % self.coin)
+                    return
+                
+                order = self.bithumb.sell_market_order(self.coin, unit, self.currency)
+                if order is not None:
+                    super().message("Sell : " + str(order))
+                    return
+                else:
+                    time.sleep(1)
+            except Exception as e:
+                super().message(e)
+                time.sleep(1)
     
     def get_predict_price(self, df = None, study_days = 20):
         """ 시계열 예측 """
