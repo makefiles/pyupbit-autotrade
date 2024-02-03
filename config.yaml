@@ -2,5 +2,5 @@
 API_ACCESS: ""
 API_SECRET: ""
 
-### 디스코드 웹훅 URL
-DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/1199335268608659537/r-gQ7yFD9sxVRY_DyFMxXi7oHcihSG0RDMm3HsTJCU9DBKAd8zsGMCT_IW2nJ3n53mRB"
+### 디스코드 웹훅 URL ###
+DISCORD_WEBHOOK_URL: ""

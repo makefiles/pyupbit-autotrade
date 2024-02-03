@@ -23,7 +23,3 @@ fig = model.plot(forecast)
 fig.show()
 # fig_com = model.plot_components(forecast)
 # fig_com.show()
-
-import pybithumb
-price_df = pybithumb.get_candlestick("BTC",  chart_intervals="24h")
-print(len(price_df))

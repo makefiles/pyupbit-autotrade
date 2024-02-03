@@ -162,6 +162,7 @@ class UpbitTrader(TradeApi):
             df = df.reset_index(names='datetime')
         return super().get_predicted_price(df)
 
+ # TODO: 너무 이상하다... 일단 사용하지 않음
 class BithumbTrader(TradeApi):
     def __init__(self, coin, currency):
         """ 초기화 & 거래 종목 선택 """
@@ -212,7 +213,6 @@ class BithumbTrader(TradeApi):
         """ 현재가 조회 """
         return pybithumb.get_orderbook(self.coin, self.currency)["asks"][0]["price"]
 
-    # TODO: 너무 이상하다...
     def buy_coin(self, krw):
         """ 매수 """
         while True:
